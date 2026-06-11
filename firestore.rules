@@ -1,0 +1,20 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /resume_scans/{docId} {
+      allow read: if request.auth != null && 
+        request.auth.uid in ['98JSe5HpUrN7kO9ypLxkpeKojXp2'];
+      allow write: if true; // Backend Admin SDK bypasses this, but client-side needs to be careful
+      // Wait, anonymous users save via backend, but auto-fix uses backend too.
+      // So write rule can be restricted, but the prompt said: "allow write: if true;"
+    }
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /scans/{docId} {
+      // Legacy collection
+      allow read, write: if request.auth != null && request.auth.uid == resource.data.uid;
+    }
+  }
+}
