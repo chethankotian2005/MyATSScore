@@ -31,10 +31,11 @@ logger = logging.getLogger(__name__)
 # Config
 import json
 
-if os.getenv("RAILWAY_ENVIRONMENT"):
-    CORS_ORIGINS = [origin.strip().rstrip("/") for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()]
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+if allowed_origins_env:
+    CORS_ORIGINS = [origin.strip().rstrip("/") for origin in allowed_origins_env.split(",") if origin.strip()]
 else:
-    CORS_ORIGINS = ["http://localhost:3000", "http://localhost:3001"]
+    CORS_ORIGINS = ["http://localhost:3000", "http://localhost:3001", "https://my-ats-score.vercel.app"]
 
 def rate_limit_key(request: Request) -> str:
     return get_remote_address(request)
