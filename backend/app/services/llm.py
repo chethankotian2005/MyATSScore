@@ -12,12 +12,38 @@ logger = logging.getLogger(__name__)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 groq_client = AsyncGroq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+class DummyRedis:
+    async def get(self, *args, **kwargs):
+        return None
+    async def setex(self, *args, **kwargs):
+        return True
+
+REDIS_URL = os.getenv("REDIS_URL")
+if not REDIS_URL or not (REDIS_URL.startswith("redis://") or REDIS_URL.startswith("rediss://") or REDIS_URL.startswith("unix://")):
+    REDIS_URL = "redis://localhost:6379/0"
 
 class LLMService:
     def __init__(self):
-        self.redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        self.redis_client = None
+        try:
+            self.redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+        except Exception as e:
+            logger.error(f"Failed to initialize Redis in LLMService: {e}")
+            self.redis_client = DummyRedis()
         self.timeout = 180.0
+
+    async def _cache_get(self, key: str) -> str | None:
+        try:
+            return await self.redis_client.get(key)
+        except Exception as e:
+            logger.warning(f"Redis get failed: {e}")
+            return None
+
+    async def _cache_set(self, key: str, value: str, expire: int = 86400):
+        try:
+            await self.redis_client.setex(key, expire, value)
+        except Exception as e:
+            logger.warning(f"Redis set failed: {e}")
 
     async def _call_groq(self, prompt: str) -> str:
         try:
@@ -51,7 +77,7 @@ class LLMService:
         jd_text = job_description or ""
         cache_key = self._cache_key("analyze", resume_text, jd_text)
         
-        cached = await self.redis_client.get(cache_key)
+        cached = await self._cache_get(cache_key)
         if cached:
             try:
                 return json.loads(cached)
@@ -119,7 +145,7 @@ Scores: {score_summary}
         
         result = self._parse_json(response_text)
         if result:
-            await self.redis_client.setex(cache_key, 86400, json.dumps(result))
+            await self._cache_set(cache_key, json.dumps(result), 86400)
             return result
 
         logger.error(f"Failed to parse JSON from Groq. Response: {response_text}")
@@ -199,7 +225,7 @@ Scores: {score_summary}
         cache_key = self._cache_key("analyze", resume_text, jd_text)
 
         # Check cache first — yield immediately if hit
-        cached = await self.redis_client.get(cache_key)
+        cached = await self._cache_get(cache_key)
         if cached:
             try:
                 result = json.loads(cached)
@@ -231,7 +257,7 @@ Scores: {score_summary}
         # Parse the accumulated response
         result = self._parse_json(full_response)
         if result:
-            await self.redis_client.setex(cache_key, 86400, json.dumps(result))
+            await self._cache_set(cache_key, json.dumps(result), 86400)
             yield {"event": "done", "data": result}
         else:
             logger.error(f"Failed to parse streamed JSON: {full_response}")
@@ -251,7 +277,7 @@ Scores: {score_summary}
     async def rewrite_section(self, section_text: str, job_description: str, section_name: str) -> dict:
         cache_key = self._cache_key(f"rewrite_{section_name}", section_text, job_description)
         
-        cached = await self.redis_client.get(cache_key)
+        cached = await self._cache_get(cache_key)
         if cached:
             try:
                 return json.loads(cached)
@@ -269,7 +295,7 @@ Job: {job_description[:500]}"""
         
         result = self._parse_json(response_text)
         if result:
-            await self.redis_client.setex(cache_key, 86400, json.dumps(result))
+            await self._cache_set(cache_key, json.dumps(result), 86400)
             return result
 
         logger.error(f"Failed to parse JSON from Ollama: {response_text}")
@@ -280,7 +306,7 @@ Job: {job_description[:500]}"""
         cache_key = self._cache_key("autofix", resume_text, json.dumps(score_data.get("breakdown", {})))
 
         # Check cache first
-        cached = await self.redis_client.get(cache_key)
+        cached = await self._cache_get(cache_key)
         if cached:
             try:
                 result = json.loads(cached)
@@ -376,7 +402,7 @@ OUTPUT JSON SCHEMA:
         # Parse the accumulated response
         result = self._parse_json(full_response)
         if result:
-            await self.redis_client.setex(cache_key, 86400, json.dumps(result))
+            await self._cache_set(cache_key, json.dumps(result), 86400)
             yield {"event": "done", "data": result}
         else:
             logger.error(f"Failed to parse auto-fix JSON: {full_response[:500]}")

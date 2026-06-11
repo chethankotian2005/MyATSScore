@@ -14,8 +14,23 @@ except OSError:
     spacy.cli.download("en_core_web_sm")
     nlp = spacy.load("en_core_web_sm")
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-_redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+class DummySyncRedis:
+    def get(self, *args, **kwargs):
+        return None
+    def setex(self, *args, **kwargs):
+        return True
+
+REDIS_URL = os.getenv("REDIS_URL")
+if not REDIS_URL or not (REDIS_URL.startswith("redis://") or REDIS_URL.startswith("rediss://") or REDIS_URL.startswith("unix://")):
+    REDIS_URL = "redis://localhost:6379/0"
+
+_redis_client = None
+try:
+    _redis_client = redis.from_url(REDIS_URL, decode_responses=True)
+except Exception as e:
+    import logging
+    logging.getLogger(__name__).error(f"Failed to initialize Redis in scorer.py: {e}")
+    _redis_client = DummySyncRedis()
 
 POWER_VERBS = {
     "led", "built", "improved", "designed", "developed", "managed", "created",
