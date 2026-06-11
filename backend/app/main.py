@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 import json
 
 if os.getenv("RAILWAY_ENVIRONMENT"):
-    CORS_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
+    CORS_ORIGINS = [origin.strip().rstrip("/") for origin in os.getenv("ALLOWED_ORIGINS", "").split(",") if origin.strip()]
 else:
     CORS_ORIGINS = ["http://localhost:3000", "http://localhost:3001"]
 
