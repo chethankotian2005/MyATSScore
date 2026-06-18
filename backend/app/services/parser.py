@@ -10,6 +10,8 @@ class ResumeParser:
         self.file = file
         self.filename = file.filename.lower() if file.filename else ""
         self.raw_text = ""
+        self.enriched_text = ""
+        self.extracted_links = []
         self.sections = {
             "contact": [],
             "summary": [],
@@ -45,9 +47,13 @@ class ResumeParser:
             )
             
         self._extract_sections()
+        self.enriched_text = self._build_enriched_text()
+        self.extracted_links = list(dict.fromkeys(self.extracted_links))
         
         return {
             "raw_text": self.raw_text.strip(),
+            "enriched_text": self.enriched_text.strip(),
+            "extracted_links": self.extracted_links,
             "sections": self.sections,
             "word_count": len(self.raw_text.split()),
             "has_tables": self.has_tables,
@@ -79,6 +85,28 @@ class ResumeParser:
                     self.has_tables = True
             except Exception:
                 pass
+                
+            try:
+                page_links = page.get_links()
+                for link in page_links:
+                    uri = link.get("uri") or link.get("URI")
+                    if uri:
+                        self.extracted_links.append(uri)
+            except Exception:
+                pass
+
+            if hasattr(page, "annots"):
+                try:
+                    for annot in page.annots() or []:
+                        uri = getattr(annot, "uri", None)
+                        if not uri:
+                            info = getattr(annot, "info", None)
+                            if isinstance(info, dict):
+                                uri = info.get("uri") or info.get("URI")
+                        if uri:
+                            self.extracted_links.append(uri)
+                except Exception:
+                    pass
                 
             blocks = page.get_text("blocks")
             
@@ -161,3 +189,11 @@ class ResumeParser:
                         
             if not is_new_section:
                 self.sections[current_section].append(line_clean)
+
+    def _build_enriched_text(self) -> str:
+        enriched = self.raw_text
+        if self.extracted_links:
+            for link in self.extracted_links:
+                if link and link not in enriched:
+                    enriched += "\n" + link
+        return enriched

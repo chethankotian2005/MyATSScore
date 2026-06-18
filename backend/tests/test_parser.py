@@ -15,7 +15,7 @@ class DummyUploadFile:
 
 @pytest.mark.asyncio
 async def test_parse_unsupported_format():
-    file = DummyUploadFile("resume.txt", b"some text")
+    file = DummyUploadFile("resume.rtf", b"some text")
     parser = ResumeParser(file)
     with pytest.raises(HTTPException) as exc_info:
         await parser.parse()
@@ -78,3 +78,20 @@ async def test_parse_pdf_success():
     assert "B.S. Computer Science" in result["sections"]["education"]
     assert "Python, FastAPI" in result["sections"]["skills"]
     assert result["has_tables"] is False
+
+@pytest.mark.asyncio
+async def test_parse_pdf_extracted_hyperlink():
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((50, 50), "LinkedIn Profile")
+    link_rect = fitz.Rect(50, 50, 250, 70)
+    page.insert_link({"kind": fitz.LINK_URI, "from": link_rect, "uri": "https://www.linkedin.com/in/test-user"})
+    content = doc.write()
+    doc.close()
+
+    file = DummyUploadFile("resume.pdf", content)
+    parser = ResumeParser(file)
+    result = await parser.parse()
+
+    assert "https://www.linkedin.com/in/test-user" in result["extracted_links"]
+    assert "https://www.linkedin.com/in/test-user" in result["enriched_text"]

@@ -78,19 +78,25 @@ class ATSScorer:
         self.resume = parsed_resume
         self.jd = job_description or ""
         self.raw_text = parsed_resume.get("raw_text", "")
+        self.enriched_text = parsed_resume.get("enriched_text", self.raw_text)
+        self.extracted_links = parsed_resume.get("extracted_links", [])
         self.sections = parsed_resume.get("sections", {})
         self.has_jd = bool(self.jd.strip())
         
     def detect_missing_critical_items(self):
         missing = []
-        raw_text_lower = self.raw_text.lower()
+        raw_text_lower = self.enriched_text.lower()
         contact_text = " ".join(self.sections.get("contact", [])).lower()
         exp_lines = self.sections.get("experience", [])
         exp_text = " ".join(exp_lines)
         exp_text_lower = exp_text.lower()
         
+        has_linkedin = "linkedin.com/in/" in raw_text_lower or "linkedin.com" in raw_text_lower or any("linkedin.com" in link.lower() for link in self.extracted_links)
+        has_github = "github.com" in raw_text_lower or any("github.com" in link.lower() for link in self.extracted_links)
+        has_portfolio = "portfolio" in raw_text_lower or any("portfolio" in link.lower() for link in self.extracted_links)
+        
         # 1. No LinkedIn URL
-        if "linkedin.com/in/" not in raw_text_lower and "linkedin.com" not in contact_text:
+        if not has_linkedin:
             missing.append({
                 "id": "no_linkedin",
                 "severity": "critical",
@@ -142,7 +148,7 @@ class ATSScorer:
             
         # 5. No GitHub/portfolio URL (for tech roles)
         is_tech = any(kw in raw_text_lower for kw in ["software", "developer", "engineer", "data", "programming"])
-        if is_tech and "github.com" not in raw_text_lower and "portfolio" not in raw_text_lower:
+        if is_tech and not has_github and not has_portfolio:
             missing.append({
                 "id": "no_portfolio",
                 "severity": "important",
@@ -210,7 +216,7 @@ class ATSScorer:
         
     def score(self) -> dict:
         # Check Redis cache first
-        cache_key = f"scorer:{hashlib.md5(self.raw_text.encode()).hexdigest()}_{hashlib.md5(self.jd.encode()).hexdigest()}"
+        cache_key = f"scorer:{hashlib.md5(self.enriched_text.encode()).hexdigest()}_{hashlib.md5(self.jd.encode()).hexdigest()}"
         try:
             cached = _redis_client.get(cache_key)
             if cached:

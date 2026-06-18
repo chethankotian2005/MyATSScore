@@ -1,6 +1,56 @@
-import { pdf, Document, Page, Text, View, StyleSheet, Font } from '@react-pdf/renderer';
+import { pdf, Document, Page, Text, View, StyleSheet, Font, Link } from '@react-pdf/renderer';
+import type { ReactNode } from 'react';
 
+const normalizeUrl = (value: string) => {
+  const trimmed = value.trim();
+  if (/^(mailto:|https?:\/\/)/i.test(trimmed)) {
+    return trimmed;
+  }
+  if (/^www\./i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return `https://${trimmed}`;
+};
 
+const renderContactLine = (contactText: string) => {
+  const segments = contactText
+    .split(/\s*\|\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part !== '');
+
+  if (segments.length === 0) {
+    return <Text style={styles.contactInfo}>Phone | Email | LinkedIn</Text>;
+  }
+
+  return (
+    <View style={styles.contactRow}>
+      {segments.map((segment, index) => {
+        const isEmail = /@/.test(segment) && !/^https?:\/\//i.test(segment);
+        const isUrl = /^(https?:\/\/|www\.|linkedin\.com|github\.com)/i.test(segment);
+        const element: ReactNode = isEmail ? (
+          <Link src={`mailto:${segment}`} style={styles.link}>
+            {segment}
+          </Link>
+        ) : isUrl ? (
+          <Link src={normalizeUrl(segment)} style={styles.link}>
+            {segment}
+          </Link>
+        ) : (
+          <Text style={styles.contactInfo}>{segment}</Text>
+        );
+
+        return (
+          <View key={index} style={styles.contactItem}>
+            {element}
+            {index < segments.length - 1 && (
+              <Text style={styles.separator}> • </Text>
+            )}
+          </View>
+        );
+      })}
+    </View>
+  );
+};
 
 const styles = StyleSheet.create({
   page: {
@@ -20,6 +70,25 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   contactInfo: {
+    fontSize: 10.5,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  separator: {
+    fontSize: 10.5,
+    color: '#000000',
+  },
+  link: {
+    color: '#000000',
+    textDecoration: 'underline',
     fontSize: 10.5,
   },
   section: {
@@ -46,17 +115,16 @@ export interface ResumeSection {
 }
 
 export const generateATSResume = async (sections: ResumeSection[], name: string) => {
-  const contactSection = sections.find(s => s.id === 'contact');
-  const otherSections = sections.filter(s => s.id !== 'contact');
+  const contactSection = sections.find((s) => s.id === 'contact');
+  const otherSections = sections.filter((s) => s.id !== 'contact');
+  const contactText = contactSection ? contactSection.content.replace(/\n/g, ' | ') : 'Phone | Email | LinkedIn';
 
   const MyDocument = (
     <Document>
       <Page size="A4" style={styles.page}>
         <View style={styles.contact}>
           <Text style={styles.name}>{name || 'YOUR NAME'}</Text>
-          <Text style={styles.contactInfo}>
-            {contactSection ? contactSection.content.replace(/\n/g, ' | ') : 'Phone | Email | LinkedIn'}
-          </Text>
+          {renderContactLine(contactText)}
         </View>
 
         {otherSections.map((sec) => {
@@ -75,18 +143,18 @@ export const generateATSResume = async (sections: ResumeSection[], name: string)
   const asPdf = pdf();
   asPdf.updateContainer(MyDocument);
   const blob = await asPdf.toBlob();
-  
+
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  
+
   const fileName = name ? `${name.toLowerCase().replace(/\s+/g, '_')}_resume.pdf` : 'resume.pdf';
   link.download = fileName;
   link.click();
   URL.revokeObjectURL(url);
 };
 
-// ─── Auto-Fix PDF Generator ────────────────────────────────────
+// --- Auto-Fix PDF Generator ------------------------------------
 
 export interface AutoFixResult {
   name: string;
@@ -116,6 +184,7 @@ export interface AutoFixResult {
     tech?: string;
     description?: string;
     achievements?: string[];
+    github_url?: string;
   }>;
 }
 
@@ -125,6 +194,25 @@ const autoFixStyles = StyleSheet.create({
     fontFamily: 'Times-Roman',
     fontSize: 10,
     lineHeight: 1.15,
+  },
+  contactRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contactItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  separator: {
+    fontSize: 9.5,
+    color: '#000000',
+  },
+  link: {
+    color: '#000000',
+    textDecoration: 'underline',
+    fontSize: 9.5,
   },
   nameBlock: {
     textAlign: 'center',
@@ -179,32 +267,84 @@ const autoFixStyles = StyleSheet.create({
   },
 });
 
-export const generateAutoFixPDF = async (data: AutoFixResult) => {
-  const contactParts = [
-    data.contact?.email,
-    data.contact?.phone, 
-    data.contact?.linkedin,
-    data.contact?.github,
-    data.contact?.portfolio,
-    data.contact?.location
-  ].filter(part => part && part.trim() !== '' && 
-    !part.includes('yourprofile') &&
-    !part.includes('placeholder'))
-   .join(' | ');
-   
-  const contactLine = contactParts || 'email@example.com | (555) 123-4567';
+const ContactLinkRow = ({ contact }: { contact: AutoFixResult['contact'] }) => {
+  const parts: ReactNode[] = [];
 
+  if (contact.email) {
+    parts.push(
+      <Link key="email" src={`mailto:${contact.email}`} style={autoFixStyles.link}>
+        {contact.email}
+      </Link>
+    );
+  }
+
+  if (contact.phone) {
+    parts.push(
+      <Text key="phone" style={autoFixStyles.contactItem}>
+        {contact.phone}
+      </Text>
+    );
+  }
+
+  if (contact.linkedin) {
+    parts.push(
+      <Link key="linkedin" src={normalizeUrl(contact.linkedin)} style={autoFixStyles.link}>
+        LinkedIn
+      </Link>
+    );
+  }
+
+  if (contact.github) {
+    parts.push(
+      <Link key="github" src={normalizeUrl(contact.github)} style={autoFixStyles.link}>
+        GitHub
+      </Link>
+    );
+  }
+
+  if (contact.portfolio) {
+    parts.push(
+      <Link key="portfolio" src={normalizeUrl(contact.portfolio)} style={autoFixStyles.link}>
+        Portfolio
+      </Link>
+    );
+  }
+
+  if (contact.location) {
+    parts.push(
+      <Text key="location" style={autoFixStyles.contactItem}>
+        {contact.location}
+      </Text>
+    );
+  }
+
+  if (parts.length === 0) {
+    return <Text style={autoFixStyles.contactLine}>email@example.com | (555) 123-4567</Text>;
+  }
+
+  return (
+    <View style={autoFixStyles.contactRow}>
+      {parts.map((part, index) => (
+        <View key={index} style={autoFixStyles.contactItem}>
+          {part}
+          {index < parts.length - 1 && (
+            <Text style={autoFixStyles.separator}> • </Text>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+};
+
+export const generateAutoFixPDF = async (data: AutoFixResult) => {
   const AutoFixDocument = (
     <Document>
       <Page size="A4" style={autoFixStyles.page}>
-        {/* Name */}
         <View style={autoFixStyles.nameBlock}>
           <Text style={autoFixStyles.name}>{data.name || 'YOUR NAME'}</Text>
         </View>
-        {/* Contact */}
-        <Text style={autoFixStyles.contactLine}>{contactLine}</Text>
+        <ContactLinkRow contact={data.contact ?? {}} />
 
-        {/* Summary */}
         {data.summary && (
           <View style={autoFixStyles.section}>
             <Text style={autoFixStyles.sectionTitle}>SUMMARY</Text>
@@ -212,7 +352,6 @@ export const generateAutoFixPDF = async (data: AutoFixResult) => {
           </View>
         )}
 
-        {/* Experience */}
         {data.experience && data.experience.length > 0 && (
           <View style={autoFixStyles.section}>
             <Text style={autoFixStyles.sectionTitle}>EXPERIENCE</Text>
@@ -220,7 +359,7 @@ export const generateAutoFixPDF = async (data: AutoFixResult) => {
               <View key={i} style={{ marginBottom: 5 }} wrap={false}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
                   <Text style={{ fontSize: 10, fontWeight: 'bold' }}>
-                    {exp.title}{exp.company ? ` — ${exp.company}` : ''}
+                    {exp.title}{exp.company ? ` • ${exp.company}` : ''}
                   </Text>
                   {exp.duration && (
                     <Text style={{ fontSize: 10, color: '#444' }}>{exp.duration}</Text>
@@ -236,7 +375,6 @@ export const generateAutoFixPDF = async (data: AutoFixResult) => {
           </View>
         )}
 
-        {/* Education */}
         {data.education && data.education.length > 0 && (
           <View style={autoFixStyles.section}>
             <Text style={autoFixStyles.sectionTitle}>EDUCATION</Text>
@@ -244,7 +382,7 @@ export const generateAutoFixPDF = async (data: AutoFixResult) => {
               <View key={i} style={{ marginBottom: 3 }} wrap={false}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 }}>
                   <Text style={{ fontSize: 10, fontWeight: 'bold' }}>
-                    {edu.degree}{edu.institution ? ` — ${edu.institution}` : ''}
+                    {edu.degree}{edu.institution ? ` • ${edu.institution}` : ''}
                   </Text>
                   {edu.year && (
                     <Text style={{ fontSize: 10, color: '#444' }}>{edu.year}</Text>
@@ -255,17 +393,13 @@ export const generateAutoFixPDF = async (data: AutoFixResult) => {
           </View>
         )}
 
-        {/* Skills */}
         {data.skills && data.skills.length > 0 && (
           <View style={autoFixStyles.section}>
             <Text style={autoFixStyles.sectionTitle}>SKILLS</Text>
-            <Text style={autoFixStyles.skillsText}>
-              {data.skills.join(', ')}
-            </Text>
+            <Text style={autoFixStyles.skillsText}>{data.skills.join(', ')}</Text>
           </View>
         )}
 
-        {/* Projects */}
         {data.projects && data.projects.length > 0 && (
           <View style={autoFixStyles.section}>
             <Text style={autoFixStyles.sectionTitle}>PROJECTS</Text>
@@ -276,6 +410,11 @@ export const generateAutoFixPDF = async (data: AutoFixResult) => {
                 </Text>
                 {proj.description && (
                   <Text style={autoFixStyles.bodyText}>{proj.description}</Text>
+                )}
+                {proj.github_url && (
+                  <Link src={normalizeUrl(proj.github_url)} style={autoFixStyles.link}>
+                    GitHub Repository
+                  </Link>
                 )}
                 {proj.achievements?.map((ach, j) => (
                   <Text key={j} style={autoFixStyles.bullet}>
@@ -305,4 +444,3 @@ export const generateAutoFixPDF = async (data: AutoFixResult) => {
   link.click();
   URL.revokeObjectURL(url);
 };
-

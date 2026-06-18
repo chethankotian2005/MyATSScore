@@ -9,6 +9,18 @@ from groq import AsyncGroq
 
 logger = logging.getLogger(__name__)
 
+SYSTEM_SUMMARY_PROMPT = """
+You are a professional resume writer. You generate UNIQUE, SPECIFIC summaries based ONLY on the exact resume content provided. You NEVER reuse content from previous requests. Each summary must be completely different because each person's resume is different.
+
+ABSOLUTE RULES:
+1. Use ONLY facts, names, institutions, projects, and achievements that appear verbatim in the provided resume text below.
+2. NEVER mention SMVITM, VoiceGuru, GDG, Award of Excellence, or ANY specific name unless it appears in THIS user's resume.
+3. BANNED PHRASES: 'Highly motivated', 'passionate', 'strong work ethic', 'team player', 'results-driven', 'seeking opportunities', 'proficient in'
+4. Format: [Degree/Field] student/professional at [Their Institution] who [their specific achievement]. Built [their specific project] that [specific result]. Skilled in [3 techs from their resume].
+5. Length: 2-3 sentences maximum.
+6. If no standout achievement exists in the resume, write a factual summary of their experience and skills only. Do not invent achievements.
+"""
+
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 groq_client = AsyncGroq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
@@ -45,12 +57,14 @@ class LLMService:
         except Exception as e:
             logger.warning(f"Redis set failed: {e}")
 
-    async def _call_groq(self, prompt: str) -> str:
+    async def _call_groq(self, prompt: str = "", messages: list[dict] | None = None, temperature: float = 0.3) -> str:
         try:
+            if messages is None:
+                messages = [{"role": "user", "content": prompt}]
             response = await groq_client.chat.completions.create(
                 model="llama-3.1-8b-instant",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
+                messages=messages,
+                temperature=temperature,
             )
             return response.choices[0].message.content or ""
         except Exception as e:
@@ -96,8 +110,6 @@ RULES:
 - Quote or reference actual content from the resume
 - Give a concrete one-line action
 - NOT be generic advice that applies to any resume
-Bad example: 'Add more action verbs'
-Good example: 'In your SMVITM Student Council bullet, replace Directed with Orchestrated and add a metric — e.g. grew participation by X%'
 Format each fix as a single sentence under 20 words.
 
 2. REWRITTEN SUMMARY: BANNED PHRASES — never use any of these:
@@ -111,7 +123,6 @@ Format each fix as a single sentence under 20 words.
 - 'with X+ years'
 - Any phrase starting with 'I am'
 Instead write: [Field] student/professional at [Institution/Company] who [specific concrete achievement]. Built [specific project] that [specific result]. Skilled in [3 most relevant techs from resume].
-Example for this resume: 'AI/ML engineering student at SMVITM who won the Award of Excellence at GDG Bengaluru's Build for Bengaluru hackathon with VoiceGuru, a multilingual voice tutor serving Kannada, Hindi, Tamil, and English speakers. Delivered production ML pipelines at Global Next Consulting and placed in 10+ national hackathons across AI, blockchain, and healthcare tracks.'
 
 Start your response with { and end with }. Use this exact structure:
 {
@@ -127,20 +138,26 @@ Start your response with { and end with }. Use this exact structure:
 
         if jd_text.strip():
             jd_short = jd_text[:800]
-            prompt = f"""Analyze resume vs job description.
-Resume: {resume_short}
-JD: {jd_short}
-Scores: {score_summary}
+            prompt = f"""Generate a professional summary for this specific resume:
+
+{resume_short}
+
+Current ATS Score: {score_summary}
 
 {prompt_suffix}"""
         else:
-            prompt = f"""Analyze this resume for general ATS compatibility.
-Resume: {resume_short}
-Scores: {score_summary}
+            prompt = f"""Generate a professional summary for this specific resume:
+
+{resume_short}
+
+Current ATS Score: {score_summary}
 
 {prompt_suffix}"""
 
-        response_text = await self._call_groq(prompt)
+        response_text = await self._call_groq(messages=[
+            {"role": "system", "content": SYSTEM_SUMMARY_PROMPT},
+            {"role": "user", "content": prompt}
+        ], temperature=0.3)
         logger.info(f"Groq response: {response_text[:300]}...")
         
         result = self._parse_json(response_text)
@@ -175,8 +192,6 @@ RULES:
 - Quote or reference actual content from the resume
 - Give a concrete one-line action
 - NOT be generic advice that applies to any resume
-Bad example: 'Add more action verbs'
-Good example: 'In your SMVITM Student Council bullet, replace Directed with Orchestrated and add a metric — e.g. grew participation by X%'
 Format each fix as a single sentence under 20 words.
 
 2. REWRITTEN SUMMARY: BANNED PHRASES — never use any of these:
@@ -190,7 +205,6 @@ Format each fix as a single sentence under 20 words.
 - 'with X+ years'
 - Any phrase starting with 'I am'
 Instead write: [Field] student/professional at [Institution/Company] who [specific concrete achievement]. Built [specific project] that [specific result]. Skilled in [3 most relevant techs from resume].
-Example for this resume: 'AI/ML engineering student at SMVITM who won the Award of Excellence at GDG Bengaluru's Build for Bengaluru hackathon with VoiceGuru, a multilingual voice tutor serving Kannada, Hindi, Tamil, and English speakers. Delivered production ML pipelines at Global Next Consulting and placed in 10+ national hackathons across AI, blockchain, and healthcare tracks.'
 
 Start your response with { and end with }. Use this exact structure:
 {
@@ -206,16 +220,19 @@ Start your response with { and end with }. Use this exact structure:
 
         if jd_text.strip():
             jd_short = jd_text[:800]
-            return f"""Analyze resume vs job description.
-Resume: {resume_short}
-JD: {jd_short}
-Scores: {score_summary}
+            return f"""Generate a professional summary for this specific resume:
+
+{resume_short}
+
+Current ATS Score: {score_summary}
 
 {prompt_suffix}"""
         else:
-            return f"""Analyze this resume for general ATS compatibility.
-Resume: {resume_short}
-Scores: {score_summary}
+            return f"""Generate a professional summary for this specific resume:
+
+{resume_short}
+
+Current ATS Score: {score_summary}
 
 {prompt_suffix}"""
 
@@ -240,7 +257,10 @@ Scores: {score_summary}
         try:
             response = await groq_client.chat.completions.create(
                 model="llama-3.1-8b-instant",
-                messages=[{"role": "user", "content": prompt}],
+                messages=[
+                    {"role": "system", "content": SYSTEM_SUMMARY_PROMPT},
+                    {"role": "user", "content": prompt}
+                ],
                 stream=True,
                 temperature=0.3,
             )
@@ -301,9 +321,15 @@ Job: {job_description[:500]}"""
         logger.error(f"Failed to parse JSON from Ollama: {response_text}")
         raise HTTPException(status_code=500, detail="Failed to rewrite section")
 
-    async def auto_fix_resume(self, resume_text: str, score_data: dict, insights: dict):
+    async def auto_fix_resume(self, resume_text: str, score_data: dict, insights: dict, extracted_links: list | None = None):
         """Async generator: rewrites the full resume as structured JSON with AI fixes applied."""
-        cache_key = self._cache_key("autofix", resume_text, json.dumps(score_data.get("breakdown", {})))
+        extracted_links = extracted_links or []
+        cache_key = self._cache_key(
+            "autofix",
+            resume_text,
+            json.dumps(score_data.get("breakdown", {})),
+            json.dumps(extracted_links, sort_keys=True)
+        )
 
         # Check cache first
         cached = await self._cache_get(cache_key)
@@ -331,6 +357,7 @@ Job: {job_description[:500]}"""
                 fixes.append(f"Fix formatting: {issue}")
 
         fixes_text = "\n".join(f"- {f}" for f in fixes) if fixes else "- Improve overall clarity and impact"
+        extracted_links_text = json.dumps(extracted_links, indent=2) if extracted_links else "[]"
 
         schema = '''{
   "name": "Full Name",
@@ -339,7 +366,7 @@ Job: {job_description[:500]}"""
   "experience": [ { "title": "Job Title", "company": "Company Name", "duration": "Start - End", "bullets": ["Achievement 1", "Achievement 2"] } ],
   "education": [ { "degree": "Degree Name", "institution": "University Name", "year": "Graduation Year" } ],
   "skills": ["Skill 1", "Skill 2", "Skill 3"],
-  "projects": [ { "name": "Project Name", "tech": "Technologies Used", "description": "Brief description", "achievements": ["Achievement 1"] } ]
+  "projects": [ { "name": "Project Name", "tech": "Technologies Used", "description": "Brief description", "achievements": ["Achievement 1"], "github_url": "https://github.com/username/project" } ]
 }'''
 
         prompt = f"""You are a professional resume writer and ATS optimization expert.
@@ -357,6 +384,7 @@ RULES:
 - linkedin: extract only if a linkedin.com URL exists in the text. If not found: return empty string ''
 - github: extract only if a github.com URL exists in the text. If not found: return empty string ''
 - portfolio: extract only if a portfolio URL exists in the text. If not found: return empty string ''
+- github_url: extract only if a GitHub repository URL exists in the resume text. If not found: return empty string ''
 DO NOT generate, invent, or use placeholder URLs like 'linkedin.com/in/yourprofile'. Empty string means omit entirely.
 7. ABSOLUTE RULE: Project descriptions are sacred. You MUST copy every project bullet point VERBATIM from the input resume. Do NOT paraphrase, summarize, or rewrite project bullets. Only fix grammar and punctuation. The project name, tech stack, award, and every bullet must match the input exactly. If you cannot find project bullets in the input, output 'See original resume for details' — never invent content.
 8. Ensure each experience bullet starts with a strong action verb.
@@ -367,7 +395,10 @@ RESUME TEXT:
 {resume_text[:3000]}
 
 {f'AI REWRITTEN SUMMARY (use this): {insights.get("rewritten_summary", "")}' if insights.get("rewritten_summary") else ''}
+EXTRACTED LINKS:
+{extracted_links_text}
 
+If hyperlinks were extracted, use them to populate linkedin/github/portfolio fields even if the visible resume text uses anchor text instead of the raw URL.
 OUTPUT JSON SCHEMA:
 {schema}"""
 
@@ -380,7 +411,7 @@ OUTPUT JSON SCHEMA:
                 model="llama-3.1-8b-instant",
                 messages=[{"role": "user", "content": prompt}],
                 stream=True,
-                temperature=0.3,
+                temperature=0.1,
             )
 
             # Step 2: Optimizing for ATS

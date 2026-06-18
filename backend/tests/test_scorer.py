@@ -40,6 +40,24 @@ def test_scorer_missing_sections(base_resume):
     # Missing education (5) and skills (5) -> 20 - 10 = 10
     assert result["breakdown"]["section"] == 10
 
+def test_scorer_detects_linkedin_from_extracted_links(base_resume):
+    base_resume["raw_text"] = "Experienced software engineer who builds products."
+    base_resume["enriched_text"] = base_resume["raw_text"]
+    base_resume["extracted_links"] = ["https://www.linkedin.com/in/test-user"]
+    scorer = ATSScorer(base_resume, "software engineer")
+    result = scorer.score()
+    missing_ids = {item["id"] for item in result["critical_missing"]}
+    assert "no_linkedin" not in missing_ids
+
+def test_scorer_detects_github_from_extracted_links(base_resume):
+    base_resume["raw_text"] = "Experienced software engineer who builds products."
+    base_resume["enriched_text"] = base_resume["raw_text"]
+    base_resume["extracted_links"] = ["https://github.com/test-user/project"]
+    scorer = ATSScorer(base_resume, "software engineer")
+    result = scorer.score()
+    missing_ids = {item["id"] for item in result["critical_missing"]}
+    assert "no_portfolio" not in missing_ids
+
 def test_scorer_formatting_penalties(base_resume):
     base_resume["has_tables"] = True
     base_resume["has_columns"] = True
