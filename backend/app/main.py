@@ -231,7 +231,7 @@ async def analyze_resume(
     
     llm_service = LLMService()
     llm_analysis = await llm_service.analyze_gaps(
-        parsed_data.get("enriched_text", parsed_data.get("raw_text", "")), 
+        parsed_data.get("raw_text", ""), 
         job_description, 
         score_data
     )
@@ -286,7 +286,7 @@ async def analyze_resume_stream(
     score_data = scorer.score()
     logger.info(f"[stream] Scoring complete (mode: {score_data.get('mode', 'jd')})")
 
-    resume_text = parsed_data.get("enriched_text", parsed_data.get("raw_text", ""))
+    resume_text = parsed_data.get("raw_text", "")
     user = getattr(request.state, "user", None)
     session_id = request.headers.get("X-Session-ID", "")
     scan_id = str(uuid.uuid4())
@@ -402,7 +402,6 @@ async def auto_fix_resume(request: Request):
     resume_text = body.get("resume_text", "")
     score_data = body.get("score_data", {})
     insights = body.get("insights", {})
-    extracted_links = body.get("extracted_links", []) or []
     scan_id = body.get("scan_id", "")
 
     if not resume_text.strip():
@@ -432,7 +431,7 @@ async def auto_fix_resume(request: Request):
 
     async def event_generator():
         import json as _json
-        async for event in llm_service.auto_fix_resume(resume_text, score_data, insights, extracted_links):
+        async for event in llm_service.auto_fix_resume(resume_text, score_data, insights):
             if event.get("event") == "step":
                 yield f"data: {_json.dumps({'type': 'step', 'step': event['step']})}\n\n"
             elif event.get("event") == "done":

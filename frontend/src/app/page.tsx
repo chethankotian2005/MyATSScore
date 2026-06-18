@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { ShieldCheck, UploadCloud, CheckCircle2, Search, LayoutTemplate, CheckSquare, TrendingUp, Zap, FileSearch, Download } from "lucide-react";
 import { FAQ } from "@/components/FAQ";
@@ -14,6 +15,7 @@ export const metadata: Metadata = {
     url: "https://myatsscore.app",
     siteName: "MyATSScore",
     type: "website",
+    images: ["/og-image.png"],
   },
 };
 
@@ -41,7 +43,10 @@ export default function LandingPage() {
       
       <header className="border-b border-slate-100">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="font-bold text-xl tracking-tight text-[#1D9E75]">myatsscore.app</div>
+          <div className="inline-flex items-center font-bold text-xl tracking-tight text-[#1D9E75]">
+            <Image src="/logo.png" alt="myatsscore" width={32} height={32} className="inline-block mr-2" />
+            <span>myatsscore.app</span>
+          </div>
           <nav className="flex gap-6 items-center">
             <AdminNav />
             <Link href="#how-it-works" className="text-sm text-slate-600 hover:text-slate-900 font-medium">How it Works</Link>
