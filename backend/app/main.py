@@ -35,7 +35,13 @@ allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
 if allowed_origins_env:
     CORS_ORIGINS = [origin.strip().rstrip("/") for origin in allowed_origins_env.split(",") if origin.strip()]
 else:
-    CORS_ORIGINS = ["http://localhost:3000", "http://localhost:3001", "https://my-ats-score.vercel.app"]
+    CORS_ORIGINS = [
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "https://my-ats-score.vercel.app",
+        "https://myatsscore.app",
+        "https://www.myatsscore.app",
+    ]
 
 def rate_limit_key(request: Request) -> str:
     return get_remote_address(request)
